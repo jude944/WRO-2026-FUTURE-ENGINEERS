@@ -179,9 +179,9 @@ The OLEX team developed an autonomous robot for the WRO Future Engineers 2026 co
 This project helped us develop important skills in robotics, programming, electronics, mechanical design, and problem solving. Through teamwork and continuous testing, we created a functional autonomous vehicle capable of navigating independently and adapting to different situations.
  Team Members
 
--Jude Salah 
--Deema 
-- Sadeel Al-Rimawi 
+- Jude Salah https://github.com/jude944 
+- Deema https://github.com/demaodeh
+- Sadeel Al-Rimawi https://github.com/SadeelBelalRemawi
 
 
 
