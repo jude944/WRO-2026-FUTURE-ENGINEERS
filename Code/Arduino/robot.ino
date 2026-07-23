@@ -5,8 +5,12 @@ Servo steering;
 #define servoPin 9
 
 int straight = 90;
-int rightTurn = 50;
-int leftTurn = 130;
+int rightTurn = 180;  // اتجاه اليمين
+int leftTurn = 0;     // اتجاه اليسار
+
+// ---------- Distances Config ----------
+int frontDistanceTrigger = 40; // مسافة كشف المنعطف
+int emergencyDistance = 15;    // مسافة الخطر للرجوع للخلف
 
 
 // ---------- Ultrasonic ----------
@@ -20,18 +24,16 @@ int leftTurn = 130;
 #define echoRight 13
 
 
-
 // ---------- Motor L298N ----------
 #define ENA 5
 #define IN1 7
 #define IN2 8
 
+// اعدادات السرعة الموزونة
+int motorSpeed = 140;    // سرعة السير المستقيم (هادئة للتحكم)
+int turnSpeed = 240;     // سرعة عالية جداً عند الالتفاف (تزيد السرعة فوراً)
+int backwardSpeed = 220; // سرعة قوية للرجوع للخلف
 
-int motorSpeed = 200;
-
-
-// ---------- Laps ----------
-int corners = 0;
 bool turning = false;
 
 
@@ -43,7 +45,6 @@ void setup() {
   steering.attach(servoPin);
   steering.write(straight);
 
-
   pinMode(trigFront, OUTPUT);
   pinMode(echoFront, INPUT);
 
@@ -53,14 +54,9 @@ void setup() {
   pinMode(trigRight, OUTPUT);
   pinMode(echoRight, INPUT);
 
-
   pinMode(ENA, OUTPUT);
   pinMode(IN1, OUTPUT);
   pinMode(IN2, OUTPUT);
-
-
-  stopMotor();
-  delay(1000);
 
 }
 
@@ -68,97 +64,84 @@ void setup() {
 // --------------------------------
 void loop() {
 
-
-  if(corners >= 12)
-  {
-    stopMotor();
-    steering.write(straight);
-
-    while(true);
-  }
-
-
-
+  // قراءة المسافات من الحساسات
   int front = distance(trigFront, echoFront);
   int left = distance(trigLeft, echoLeft);
   int right = distance(trigRight, echoRight);
 
 
-
+  // طباعة القيم لمتابعة الأداء
   Serial.print("F:");
   Serial.print(front);
   Serial.print(" L:");
   Serial.print(left);
   Serial.print(" R:");
-  Serial.print(right);
-  Serial.print(" Corners:");
-  Serial.println(corners);
+  Serial.println(right);
 
 
-
-  // يوجد زاوية
-  if(front < 20 && turning == false)
+  // ---------- 1. حالة الطوارئ: اقتراب شديد جداً (رجوع مسافة منيحة وبدون توقف) ----------
+  if(front < emergencyDistance && turning == false)
   {
-
     turning = true;
-    corners++;
 
+    // عكس الاتجاه فوراً للخلف وبسرعة عالية ولمدة 700ms ليرجع مسافة منيحة
+    steering.write(straight);
+    backward(backwardSpeed);
+    delay(700); 
 
-    // يختار اتجاه اللفة
+    turning = false;
+  }
+
+  // ---------- 2. حالة وجود منعطف (كسر سريع وزيادة السرعة فوراً) ----------
+  else if(front < frontDistanceTrigger && turning == false)
+  {
+    turning = true;
+
+    // توجيه السيرفو فوراً للجهة المفتوحة
     if(right > left)
     {
-      steering.write(rightTurn);
+      steering.write(rightTurn); 
     }
     else
     {
-      steering.write(leftTurn);
+      steering.write(leftTurn);  
     }
 
-
-    delay(700);
+    // زيادة سرعة الـ DC فوراً لـ 240 أثناء اللف
+    forward(turnSpeed);
+    delay(220); // زمن خاطف وسريع جداً ليعبر الممر بدون اندفاع زاد
 
     steering.write(straight);
 
-    delay(300);
-
     turning = false;
-
   }
 
-
-
-  else
+  // ---------- 3. حالة السير المستقيم وتصحيح المسار ----------
+  else if(!turning)
   {
-
-    // تصحيح المسار
-    if(right < 15)
+    if(right < 14)
     {
-      steering.write(leftTurn);
+      steering.write(leftTurn); // الابتعاد عن الجدار الأيمن
     }
-
-    else if(left < 15)
+    else if(left < 14)
     {
-      steering.write(rightTurn);
+      steering.write(rightTurn); // الابتعاد عن الجدار الأيسر
     }
-
     else
     {
       steering.write(straight);
     }
 
-
-    forward();
-
+    // السير بالأمام بالسرعة العادية للمستقيم
+    forward(motorSpeed);
   }
 
 }
 
 
-
-// ---------- Distance ----------
+// ---------- Distance Calculation ----------
 int distance(int trig, int echo)
 {
-
   digitalWrite(trig, LOW);
   delayMicroseconds(2);
 
@@ -167,40 +150,38 @@ int distance(int trig, int echo)
 
   digitalWrite(trig, LOW);
 
-
-  long time = pulseIn(echo,HIGH,20000);
-
+  long time = pulseIn(echo, HIGH, 12000);
 
   if(time == 0)
     return 200;
 
-
   return time * 0.034 / 2;
-
 }
-
 
 
 // ---------- Motor Forward ----------
+void forward(int speedValue)
+{
+  analogWrite(ENA, speedValue);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+}
+
 void forward()
 {
-
-  analogWrite(ENA,motorSpeed);
-
-  digitalWrite(IN1,HIGH);
-  digitalWrite(IN2,LOW);
-
+  forward(motorSpeed);
 }
 
 
-
-// ---------- Motor Stop ----------
-void stopMotor()
+// ---------- Motor Backward ----------
+void backward(int speedValue)
 {
+  analogWrite(ENA, speedValue);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+}
 
-  analogWrite(ENA,0);
-
-  digitalWrite(IN1,LOW);
-  digitalWrite(IN2,LOW);
-
+void backward()
+{
+  backward(motorSpeed);
 }
