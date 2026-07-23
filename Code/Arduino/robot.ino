@@ -5,13 +5,13 @@ Servo steering;
 #define servoPin 9
 
 int straight = 90;
-int rightTurn = 180;  // اتجاه اليمين
-int leftTurn = 0;     // اتجاه اليسار
+int rightTurn = 140;  // اتجاه اليمين
+int leftTurn = 50;    // اتجاه اليسار
 
 // ---------- Distances Config ----------
-int frontDistanceTrigger = 40; // مسافة كشف المنعطف
-int emergencyDistance = 15;    // مسافة الخطر للرجوع للخلف
-
+int frontDistanceTrigger = 90;  // مسافة كشف المنعطف
+int emergencyDistance = 30;     // مسافة الخطر للرجوع للخلف
+int clearDistance = 65;         // المسافة التي يعتبر عندها اللفة انتهت
 
 // ---------- Ultrasonic ----------
 #define trigFront 2
@@ -23,19 +23,19 @@ int emergencyDistance = 15;    // مسافة الخطر للرجوع للخلف
 #define trigRight 12
 #define echoRight 13
 
-
 // ---------- Motor L298N ----------
 #define ENA 5
 #define IN1 7
 #define IN2 8
 
-// اعدادات السرعة الموزونة
-int motorSpeed = 140;    // سرعة السير المستقيم (هادئة للتحكم)
-int turnSpeed = 240;     // سرعة عالية جداً عند الالتفاف (تزيد السرعة فوراً)
-int backwardSpeed = 220; // سرعة قوية للرجوع للخلف
+// اعدادات السرعة
+int motorSpeed = 160;    // سرعة السير المستقيم
+int turnSpeed = 240;     // سرعة عالية جداً عند الالتفاف
+int backwardSpeed = 230; // سرعة الرجوع للخلف
 
+// ---------- المتغيرات المساعدة ----------
 bool turning = false;
-
+const unsigned long turnTimeout = 2200; // زمن الأمان للفة
 
 // --------------------------------
 void setup() {
@@ -60,7 +60,6 @@ void setup() {
 
 }
 
-
 // --------------------------------
 void loop() {
 
@@ -69,8 +68,7 @@ void loop() {
   int left = distance(trigLeft, echoLeft);
   int right = distance(trigRight, echoRight);
 
-
-  // طباعة القيم لمتابعة الأداء
+  // طباعة القيم
   Serial.print("F:");
   Serial.print(front);
   Serial.print(" L:");
@@ -78,52 +76,73 @@ void loop() {
   Serial.print(" R:");
   Serial.println(right);
 
-
-  // ---------- 1. حالة الطوارئ: اقتراب شديد جداً (رجوع مسافة منيحة وبدون توقف) ----------
+  // ---------- 1. حركة المكان الضيق (الرجوع مع كسر العجلات مثل السيارة الحقيقية) ----------
   if(front < emergencyDistance && turning == false)
   {
     turning = true;
 
-    // عكس الاتجاه فوراً للخلف وبسرعة عالية ولمدة 700ms ليرجع مسافة منيحة
-    steering.write(straight);
+    // تحديد الاتجاه المفتوح
+    bool goRight = (right > left);
+
+    // محاكاة حركة السائق الحقيقي:
+    // نكسر العجلات بالاتجاه المعاكس ونرجع للخلف عشان يبعد وجه السيارة عن الحايط
+    steering.write(goRight ? leftTurn : rightTurn);
     backward(backwardSpeed);
-    delay(700); 
+    delay(600); // يرجع وهو لافف العجلات
+
+    // نكسر العجلات فوراً باتجاه المنعطف المفتوح ونطلع للأمام
+    steering.write(goRight ? rightTurn : leftTurn);
+    forward(turnSpeed);
+    delay(300);
 
     turning = false;
   }
 
-  // ---------- 2. حالة وجود منعطف (كسر سريع وزيادة السرعة فوراً) ----------
+  // ---------- 2. حالة المنعطف العادي (Adaptive) ----------
   else if(front < frontDistanceTrigger && turning == false)
   {
     turning = true;
 
     // توجيه السيرفو فوراً للجهة المفتوحة
-    if(right > left)
-    {
-      steering.write(rightTurn); 
-    }
-    else
-    {
-      steering.write(leftTurn);  
-    }
+    bool goRight = (right > left);
+    steering.write(goRight ? rightTurn : leftTurn);
 
-    // زيادة سرعة الـ DC فوراً لـ 240 أثناء اللف
     forward(turnSpeed);
-    delay(220); // زمن خاطف وسريع جداً ليعبر الممر بدون اندفاع زاد
+
+    unsigned long startTime = millis();
+    int f = front;
+
+    while(f < clearDistance && (millis() - startTime) < turnTimeout)
+    {
+      f = distance(trigFront, echoFront);
+
+      // إذا قرب كثير وهو يلف: يرجع مع كسر عكسي ويكمل للأمام
+      if(f < emergencyDistance)
+      {
+        steering.write(goRight ? leftTurn : rightTurn);
+        backward(backwardSpeed);
+        delay(250);
+        
+        steering.write(goRight ? rightTurn : leftTurn);
+        forward(turnSpeed);
+      }
+
+      Serial.print("Turning... F:");
+      Serial.println(f);
+    }
 
     steering.write(straight);
-
     turning = false;
   }
 
   // ---------- 3. حالة السير المستقيم وتصحيح المسار ----------
   else if(!turning)
   {
-    if(right < 14)
+    if(right < 8)
     {
       steering.write(leftTurn); // الابتعاد عن الجدار الأيمن
     }
-    else if(left < 14)
+    else if(left < 8)
     {
       steering.write(rightTurn); // الابتعاد عن الجدار الأيسر
     }
@@ -132,12 +151,10 @@ void loop() {
       steering.write(straight);
     }
 
-    // السير بالأمام بالسرعة العادية للمستقيم
     forward(motorSpeed);
   }
 
 }
-
 
 // ---------- Distance Calculation ----------
 int distance(int trig, int echo)
@@ -158,7 +175,6 @@ int distance(int trig, int echo)
   return time * 0.034 / 2;
 }
 
-
 // ---------- Motor Forward ----------
 void forward(int speedValue)
 {
@@ -171,7 +187,6 @@ void forward()
 {
   forward(motorSpeed);
 }
-
 
 // ---------- Motor Backward ----------
 void backward(int speedValue)
